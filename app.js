@@ -1,13 +1,35 @@
 const express = require('express');
 const { Storage } = require('@google-cloud/storage');
+const { PubSub } = require('@google-cloud/pubsub');
+const socketIo = require('socket.io');
+const http = require('http');
 const cors = require('cors');
 const path = require('path');
+
 const multer = require('multer');
 
 const app = express();
+const server = http.createServer(app);
+const io = socketIo(server, {
+  cors: {
+    origin: '*',
+    methods: ['GET', 'POST'],
+    allowedHeaders: ['my-custom-header'],
+    credentials: true,
+  },
+});
+
 const port = 3002;
 
+const subscriptionName =
+  'projects/rugged-alloy-422301-i9/subscriptions/video-exported-upload-sub';
+
 const storage = new Storage({
+  keyFilename: path.join(__dirname, '/service_account_keyfile.json'),
+  projectId: 'rugged-alloy-422301-i9',
+});
+
+const pubsub = new PubSub({
   keyFilename: path.join(__dirname, '/service_account_keyfile.json'),
   projectId: 'rugged-alloy-422301-i9',
 });
@@ -19,11 +41,32 @@ const fileName = '1917 manual_events_manual_sounds.json';
 const foleyVideoUploads = 'auto-foley-video-uploads';
 const soundMatchEvents = 'sound-matched-events';
 // for test purpose
-const bucket = storage.bucket('front-end-video-upload-test');
+const bucket = storage.bucket(foleyVideoUploads);
 
 const upload = multer({
   storage: multer.memoryStorage(),
 });
+
+const subscription = pubsub.subscription(subscriptionName);
+
+const broadcastMessage = message => {
+  io.emit('message', message);
+};
+
+const messageHandler = message => {
+  console.log(`Received message: ${message.data.toString()}`);
+  const data = JSON.parse(message.data.toString());
+
+  // Broadcast the message to all connected clients
+  broadcastMessage(data);
+
+  // Acknowledge the message
+  message.ack();
+};
+
+subscription.on('message', messageHandler);
+
+console.log('Listening to pubsub');
 
 app.use(cors());
 app.use(express.json());
@@ -56,7 +99,7 @@ app.get('/audio/:filename', async (req, res) => {
 
   const remoteReadStream = file.createReadStream();
   remoteReadStream.on('error', err => {
-    res.status(500).send('Error retrieving file');
+    // res.status(500).send('Error retrieving file');
   });
   remoteReadStream.pipe(res);
 });
@@ -119,6 +162,14 @@ app.post('/upload', upload.single('video'), async (req, res) => {
   }
 });
 
-app.listen(port, () => {
+io.on('connection', socket => {
+  console.log('Client connected');
+
+  socket.on('disconnect', () => {
+    console.log('Client disconnected');
+  });
+});
+
+server.listen(port, () => {
   console.log(`Server is running on port ${port}`);
 });

@@ -24,6 +24,11 @@ const port = 3002;
 const subscriptionName =
   'projects/rugged-alloy-422301-i9/subscriptions/video-exported-upload-sub';
 
+const extractedEventUpload =
+  'projects/rugged-alloy-422301-i9/subscriptions/extracted-event-upload-sub';
+const soundMatchedUpload =
+  'projects/rugged-alloy-422301-i9/subscriptions/sound-matched-upload-sub';
+
 const storage = new Storage({
   keyFilename: path.join(__dirname, '/service_account_keyfile.json'),
   projectId: 'rugged-alloy-422301-i9',
@@ -49,6 +54,9 @@ const upload = multer({
 
 const subscription = pubsub.subscription(subscriptionName);
 
+const extractedEventUploadSub = pubsub.subscription(extractedEventUpload);
+const soundMatchedUploadSub = pubsub.subscription(soundMatchedUpload);
+
 const broadcastMessage = message => {
   io.emit('message', message);
 };
@@ -58,13 +66,34 @@ const messageHandler = message => {
   const data = JSON.parse(message.data.toString());
 
   // Broadcast the message to all connected clients
-  broadcastMessage(data);
+  // broadcastMessage(data);
 
   // Acknowledge the message
   message.ack();
 };
 
-subscription.on('message', messageHandler);
+subscription.on('message', message => {
+  console.log(`Finalized video`);
+
+  broadcastMessage('Finalized video');
+
+  message.ack();
+});
+extractedEventUploadSub.on('message', message => {
+  console.log(`Extracted video`);
+
+  broadcastMessage('Extracted video');
+
+  message.ack();
+});
+
+soundMatchedUploadSub.on('message', message => {
+  console.log(`Sound Matched video`);
+
+  broadcastMessage('Sound Matched video');
+
+  message.ack();
+});
 
 console.log('Listening to pubsub');
 

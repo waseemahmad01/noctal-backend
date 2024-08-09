@@ -45,6 +45,7 @@ const alternateFoleyLibraryBucketName = 'demo-sounds';
 const fileName = '1917 manual_events_manual_sounds.json';
 const foleyVideoUploads = 'auto-foley-video-uploads';
 const soundMatchEvents = 'sound-matched-events';
+const foleySoundLarge = 'foley-sound-library-large';
 // for test purpose
 const bucket = storage.bucket(foleyVideoUploads);
 
@@ -112,23 +113,26 @@ app.get('/api/json-data', async (req, res) => {
   }
 });
 
-app.get('/audio/:filename', async (req, res) => {
+app.post('/audio', async (req, res) => {
   res.set('Content-Type', 'audio/wav');
-  const filename = req.params.filename;
+  const filename = req.body.filename;
   var file = storage.bucket(foleyLibraryBucket).file(filename);
-
   var [exists] = await file.exists();
   if (!exists) {
     file = storage.bucket(alternateFoleyLibraryBucketName).file(filename);
     [exists] = await file.exists();
     if (!exists) {
-      return res.status(404).send('File not found');
+      file = storage.bucket(foleySoundLarge).file(filename);
+      [exists] = await file.exists();
+      if (!exists) {
+        return res.status(404).send('File not found');
+      }
     }
   }
 
   const remoteReadStream = file.createReadStream();
   remoteReadStream.on('error', err => {
-    // res.status(500).send('Error retrieving file');
+    res.status(500).send('Error retrieving file');
   });
   remoteReadStream.pipe(res);
 });

@@ -5,6 +5,7 @@ const socketIo = require('socket.io');
 const http = require('http');
 const cors = require('cors');
 const path = require('path');
+const fs = require('fs');
 
 const multer = require('multer');
 
@@ -29,6 +30,9 @@ const extractedEventUpload =
 const soundMatchedUpload =
   'projects/rugged-alloy-422301-i9/subscriptions/sound-matched-upload-sub';
 
+// const videoUpload =
+//   'projects/rugged-alloy-422301-i9/subscriptions/video-upload-sub';
+
 const storage = new Storage({
   keyFilename: path.join(__dirname, '/service_account_keyfile.json'),
   projectId: 'rugged-alloy-422301-i9',
@@ -45,7 +49,7 @@ const alternateFoleyLibraryBucketName = 'demo-sounds';
 const fileName = '1917 manual_events_manual_sounds.json';
 const foleyVideoUploads = 'auto-foley-video-uploads';
 const soundMatchEvents = 'sound-matched-events';
-const foleySoundLarge = 'foley-sound-library-large';
+const foleySoundLarge = 'foley-sound-library-compressed';
 // for test purpose
 const bucket = storage.bucket(foleyVideoUploads);
 
@@ -57,6 +61,7 @@ const subscription = pubsub.subscription(subscriptionName);
 
 const extractedEventUploadSub = pubsub.subscription(extractedEventUpload);
 const soundMatchedUploadSub = pubsub.subscription(soundMatchedUpload);
+// const videoUploadSub = pubsub.subscription(videoUpload);
 
 const broadcastMessage = message => {
   io.emit('message', message);
@@ -96,6 +101,12 @@ soundMatchedUploadSub.on('message', message => {
   message.ack();
 });
 
+// videoUploadSub.on('message', message => {
+//   console.log(`Video Uploaded`);
+//   console.log(message);
+//   message.ack();
+// });
+
 console.log('Listening to pubsub');
 
 app.use(cors());
@@ -122,7 +133,8 @@ app.post('/audio', async (req, res) => {
     file = storage.bucket(alternateFoleyLibraryBucketName).file(filename);
     [exists] = await file.exists();
     if (!exists) {
-      file = storage.bucket(foleySoundLarge).file(filename);
+      const name = filename.replace('.wav', '.mp3');
+      file = storage.bucket(foleySoundLarge).file(name);
       [exists] = await file.exists();
       if (!exists) {
         return res.status(404).send('File not found');
@@ -192,6 +204,29 @@ app.post('/upload', upload.single('video'), async (req, res) => {
     blobStream.end(req.file.buffer);
   } catch (err) {
     res.status(500).send({ message: err.message });
+  }
+});
+
+app.post('/upload-json', async (req, res) => {
+  try {
+    const { jsonData, name } = req.body;
+    fs.writeFileSync(
+      `./uploads/${name}.json`,
+      JSON.stringify(jsonData, null, 2)
+    );
+    const data = fs.readFileSync(`./uploads/${name}.json`);
+
+    await storage
+      .bucket(bucketName)
+      .file(`${name}.json`)
+      .save(data, { contentType: 'application/json' });
+    fs.unlink(`./uploads/${name}.json`, err => {
+      if (err) console.log(err);
+    });
+    res.status(200).send('JSON data uploaded successfully');
+  } catch (error) {
+    console.log(error);
+    res.status(500).send('Error uploading JSON data');
   }
 });
 

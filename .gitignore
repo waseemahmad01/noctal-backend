@@ -1,3 +1,5 @@
 /node_modules
 service_account_keyfile.json
 pubsub_service_key.json
+
+/uploads

@@ -1,6 +1,6 @@
 const express = require('express');
 const { Storage } = require('@google-cloud/storage');
-const { PubSub } = require('@google-cloud/pubsub');
+// const { PubSub } = require('@google-cloud/pubsub');
 const socketIo = require('socket.io');
 const http = require('http');
 const cors = require('cors');
@@ -20,15 +20,27 @@ const io = socketIo(server, {
   },
 });
 
+function generateRandomString(length = 15) {
+  const characters =
+    'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+  let randomString = '';
+  for (let i = 0; i < length; i++) {
+    randomString += characters.charAt(
+      Math.floor(Math.random() * characters.length)
+    );
+  }
+  return randomString;
+}
+
 const port = 3002;
 
-const subscriptionName =
-  'projects/rugged-alloy-422301-i9/subscriptions/video-exported-upload-sub';
+// const subscriptionName =
+//   'projects/rugged-alloy-422301-i9/subscriptions/video-exported-upload-sub';
 
-const extractedEventUpload =
-  'projects/rugged-alloy-422301-i9/subscriptions/extracted-event-upload-sub';
-const soundMatchedUpload =
-  'projects/rugged-alloy-422301-i9/subscriptions/sound-matched-upload-sub';
+// const extractedEventUpload =
+//   'projects/rugged-alloy-422301-i9/subscriptions/extracted-event-upload-sub';
+// const soundMatchedUpload =
+//   'projects/rugged-alloy-422301-i9/subscriptions/sound-matched-upload-sub';
 
 // const videoUpload =
 //   'projects/rugged-alloy-422301-i9/subscriptions/video-upload-sub';
@@ -38,13 +50,14 @@ const storage = new Storage({
   projectId: 'rugged-alloy-422301-i9',
 });
 
-const pubsub = new PubSub({
-  keyFilename: path.join(__dirname, '/service_account_keyfile.json'),
-  projectId: 'rugged-alloy-422301-i9',
-});
+// const pubsub = new PubSub({
+//   keyFilename: path.join(__dirname, '/service_account_keyfile.json'),
+//   projectId: 'rugged-alloy-422301-i9',
+// });
 
 const bucketName = 'sound-matched-events';
-const foleyLibraryBucket = 'foley-sound-library';
+const foleyLibraryBucket = 'foley-sound-library-mp3';
+const uploadBucketlink = 'gs://auto-foley-video-uploads/';
 const alternateFoleyLibraryBucketName = 'demo-sounds';
 const fileName = '1917 manual_events_manual_sounds.json';
 const foleyVideoUploads = 'auto-foley-video-uploads';
@@ -57,55 +70,9 @@ const upload = multer({
   storage: multer.memoryStorage(),
 });
 
-const subscription = pubsub.subscription(subscriptionName);
-
-const extractedEventUploadSub = pubsub.subscription(extractedEventUpload);
-const soundMatchedUploadSub = pubsub.subscription(soundMatchedUpload);
-// const videoUploadSub = pubsub.subscription(videoUpload);
-
 const broadcastMessage = message => {
   io.emit('message', message);
 };
-
-const messageHandler = message => {
-  console.log(`Received message: ${message.data.toString()}`);
-  const data = JSON.parse(message.data.toString());
-
-  // Broadcast the message to all connected clients
-  // broadcastMessage(data);
-
-  // Acknowledge the message
-  message.ack();
-};
-
-subscription.on('message', message => {
-  console.log(`Finalized video`);
-
-  broadcastMessage('Finalized video');
-
-  message.ack();
-});
-extractedEventUploadSub.on('message', message => {
-  console.log(`Extracted video`);
-
-  broadcastMessage('Extracted video');
-
-  message.ack();
-});
-
-soundMatchedUploadSub.on('message', message => {
-  console.log(`Sound Matched video`);
-
-  broadcastMessage('Sound Matched video');
-
-  message.ack();
-});
-
-// videoUploadSub.on('message', message => {
-//   console.log(`Video Uploaded`);
-//   console.log(message);
-//   message.ack();
-// });
 
 console.log('Listening to pubsub');
 
@@ -127,13 +94,15 @@ app.get('/api/json-data', async (req, res) => {
 app.post('/audio', async (req, res) => {
   res.set('Content-Type', 'audio/wav');
   const filename = req.body.filename;
-  var file = storage.bucket(foleyLibraryBucket).file(filename);
+  const name = filename.replace('.wav', '.mp3');
+  var file = storage.bucket(foleyLibraryBucket).file(name);
   var [exists] = await file.exists();
   if (!exists) {
     file = storage.bucket(alternateFoleyLibraryBucketName).file(filename);
     [exists] = await file.exists();
     if (!exists) {
       const name = filename.replace('.wav', '.mp3');
+      // const name = filename;
       file = storage.bucket(foleySoundLarge).file(name);
       [exists] = await file.exists();
       if (!exists) {
@@ -188,7 +157,15 @@ app.post('/upload', upload.single('video'), async (req, res) => {
       return res.status(400).send('No file uploaded.');
     }
 
-    const blob = bucket.file(req.file.originalname);
+    const filename =
+      req.file.originalname.substring(
+        0,
+        req.file.originalname.lastIndexOf('.')
+      ) || req.file.originalname;
+
+    let name = filename + '__' + generateRandomString();
+
+    const blob = bucket.file(name);
     const blobStream = blob.createWriteStream({
       resumable: false,
     });
@@ -198,7 +175,7 @@ app.post('/upload', upload.single('video'), async (req, res) => {
     });
 
     blobStream.on('finish', () => {
-      res.status(200).send('File uploaded.');
+      res.status(200).json({ url: uploadBucketlink + name });
     });
 
     blobStream.end(req.file.buffer);
